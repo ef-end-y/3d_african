@@ -109,10 +109,7 @@ def triangle(a, b, c, texture, texture_img):
         delta_v1 = float(point.v - v1) / height if height else 0
         delta_u1 = float(point.u - u1) / height if height else 0
         delta_b_light = float(point.light - light1) / height if height else 0
-        dz = 0
-        du = 0
-        dv = 0
-        dl = 0
+        dz = du = dv = dl = 0
         while y <= point.y:
             if x1 != x2 and not dz:
                 width = float(x2 - x1)
