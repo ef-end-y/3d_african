@@ -9,15 +9,27 @@ class Canvas(object):
     scr_x = None
     scr_y = None
     scr_z = None
+    center_x = None
+    center_y = None
 
     def __init__(self, scr_x, scr_y, scr_z):
-        Canvas.img = Image.new('RGB', (scr_x, scr_y), 'white')
+        Canvas.img = Image.new('RGB', (scr_x, scr_y), 'black')
         Canvas.pixels = self.img.load()
         Canvas.z_buffer = {}
         Canvas.scr_x = scr_x - 1
         Canvas.scr_y = scr_y - 1
         Canvas.scr_z = scr_z - 1
+        Canvas.center_x = int(scr_x/2)
+        Canvas.center_y = int(scr_y/2)
         Canvas.canvas = self
+
+    @classmethod
+    def pixel(cls, x, y, z, color):
+        index = '%s:%s' % (x, y)
+        if index in cls.z_buffer and cls.z_buffer[index] > z:
+            return
+        cls.z_buffer[index] = z
+        cls.pixels[cls.center_x + x, cls.center_y - y] = color
 
     @classmethod
     def show(cls):
@@ -37,25 +49,7 @@ class Vector(object):
 
     def draw(self, color):
         x, y, z = int(round(self.x)), int(round(self.y)), int(round(self.z))
-        index = '%s:%s' % (x, y)
-        if index in Canvas.z_buffer and Canvas.z_buffer[index] > z:
-            return
-        Canvas.z_buffer[index] = z
-        try:
-            Canvas.pixels[x, Canvas.scr_y-y] = color
-        except IndexError:
-            pass
-
-    def draw2(self, color):
-        x, y, z = int(round(self.x)), int(round(self.y)), int(round(self.z))
-        index = '%s:%s' % (x, z)
-        if index in Canvas.z_buffer and Canvas.z_buffer[index] > y:
-            return
-        Canvas.z_buffer[index] = y
-        try:
-            Canvas.pixels[x, Canvas.scr_y-z*2] = color
-        except IndexError:
-            pass
+        Canvas.pixel(x, y, z, color)
 
     def multiply(self, vec):
         return Vector(
