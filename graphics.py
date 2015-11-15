@@ -25,11 +25,16 @@ class Canvas(object):
 
     @classmethod
     def pixel(cls, x, y, z, color):
+        x, y, z = int(round(x)), int(round(y)), round(z)
         index = '%s:%s' % (x, y)
-        if index in cls.z_buffer and cls.z_buffer[index] > z:
+        if cls.z_buffer.get(index, -99999) >= z:
             return
         cls.z_buffer[index] = z
-        cls.pixels[cls.center_x + x, cls.center_y - y] = color
+        try:
+            cls.pixels[x, cls.scr_y - y] = color
+        except:
+            #print x, y
+            pass
 
     @classmethod
     def show(cls):
@@ -48,8 +53,7 @@ class Vector(object):
         self.x, self.y, self.z = x, y, z
 
     def draw(self, color):
-        x, y, z = int(round(self.x)), int(round(self.y)), int(round(self.z))
-        Canvas.pixel(x, y, z, color)
+        Canvas.pixel(self.x, self.y, self.z, color)
 
     def multiply(self, vec):
         return Vector(
