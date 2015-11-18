@@ -7,7 +7,6 @@ from graphics import Vector, Canvas
 
 scr_x = 800
 scr_z = 1000
-padding = 100
 
 """
  0: без текстуры, яркость пропорциональна z-координате
@@ -25,7 +24,7 @@ class Face(object):
     light_vector = None
     eye_vector = None
 
-    def __init__(self, texture_file, normals_file):
+    def __init__(self, texture_file, normals_file, obj_file=''):
         self.texture_img = Image.open(texture_file)
         self.texture_pixels = self.texture_img.load()
         self.normals_img = Image.open(normals_file)
@@ -35,36 +34,35 @@ class Face(object):
         self.textures = textures = []
         self.polygons = polygons = []
         self.normals_map = []
-        self.extremes = ([0, 0], [0, 0], [0, 0])
 
-        obj_file = open('face.obj', 'r')
+        obj_file = open(obj_file, 'r')
         src = obj_file.read()
 
         u_max = self.texture_img.width
         v_max = self.texture_img.height
         for s in src.split('\n'):
             try:
-                cmd, x, y, z = re.split('\s+', re.sub('(\s|\r)*$', '', s))
-            except ValueError:
+                data = re.split('\s+', re.sub('(\s|\r)*$', '', s))
+                cmd = data[0]
+                if cmd == 'v':
+                    vectors.append([float(i) for i in data[1:4]])
+                if cmd == 'vn':
+                    normals.append([float(i) for i in data[1:4]])
+                if cmd == 'vt':
+                    textures.append([float(data[1]) * u_max, float(data[2]) * v_max])
+                if cmd == 'f':
+                    f = [[0 if j == '' else int(j)-1 for j in i.split('/')] for i in data[1:4]]
+                    polygon = []
+                    for i in f:
+                        polygon.append({
+                            'xyz': vectors[i[0]],
+                            'texture': textures[i[1]],
+                            'normals': normals[i[2]],
+                        })
+                    polygons.append(polygon)
+            except (ValueError, IndexError):
+                print s
                 continue
-            if cmd == 'v':
-                coord = [float(i) for i in (x, y, z)]
-                for i in (0, 1, 2):
-                    self.extremes[i][0] = min(self.extremes[i][0], coord[i])
-                    self.extremes[i][1] = max(self.extremes[i][1], coord[i])
-                vectors.append(coord)
-            if cmd == 'vn':
-                normals.append([float(i) for i in (x, y, z)])
-            if cmd == 'vt':
-                textures.append([float(x) * u_max, float(y) * v_max])
-            if cmd == 'f':
-                f = [[0 if j == '' else int(j)-1 for j in i.split('/')] for i in (x, y, z)]
-                polygons.append({
-                    'vectors': [i[0] for i in f],
-                    'texture': [i[1] for i in f],
-                    'normals': [i[2] for i in f],
-                })
-        pass
 
     def triangle(self, a, b, c):
         light_vector = self.light_vector
@@ -72,7 +70,7 @@ class Face(object):
         texture_pixels = self.texture_pixels
         normals_map = self.normals_map
         u_max = self.texture_img.width - 1
-        v_max = self.texture_img.height
+        v_max = self.texture_img.height - 1
         a, b, c = sorted((a, b, c), key=lambda vector: vector.y)
         y, x1, x2, z1, z2 = a.y, a.x, a.x, a.z, a.z
         u1, u2, v1, v2 = a.u, a.u, a.v, a.v
@@ -116,14 +114,8 @@ class Face(object):
                     elif Mode == 1:
                         Canvas.pixel(x, y, z, (int(light),) * 3)
                     else:
-                        uu = int(u)
-                        vv = int(v_max-v-1)
-                        if uu > u_max:
-                            uu = u_max
-                        if uu < 0:
-                            uu = 0
-                        if vv < 0:
-                            vv = 0
+                        uu = max(0, min(int(u), u_max))
+                        vv = max(0, min(int(v_max - v), v_max))
                         color = list(texture_pixels[uu, vv])
                         if Mode == 2:
                             pass
@@ -170,10 +162,6 @@ class Face(object):
     def show(self, light_vector, eye_vector, rotate):
         self.light_vector = light_vector
         self.eye_vector = eye_vector
-        original_box = [i[1] - i[0] for i in self.extremes]
-        scr_y = int(scr_x * original_box[1] / original_box[0])
-        Canvas(scr_x, scr_y, scr_z)
-
         self.normals_map = normals_map = []
         height = self.normals_img.height
         normals_pixels = self.normals_pixels
@@ -181,34 +169,60 @@ class Face(object):
             line = [[float(a-128)/128 for a in normals_pixels[j, i]] for i in range(height)]
             normals_map.append(line)
 
-        scale = [scr_x-padding, scr_y-padding, scr_z-padding]
-        scale = [scale[i] / (self.extremes[i][1]-self.extremes[i][0]) for i in (0, 1, 2)]
-        padding2 = padding / 2
-        k = 1
-        for i in self.polygons:
-            vectors = [self.vectors[j] for j in i['vectors']]
-            normals = [self.normals[j] for j in i['normals']]
-            texture = [0 if j == 0 else self.textures[j] for j in i['texture']]
-            new_vectors = []
-            for v in vectors:
-                xyz = [(v[j] - self.extremes[j][0]) * scale[j] * k + padding2 for j in (0, 1, 2)]
-                x = int(xyz[0] * cos(rotate) - xyz[2] * sin(rotate))
-                z = int(xyz[0] * sin(rotate) + xyz[2] * cos(rotate))
-                y = int(xyz[1])
-                new_vectors.append(Vector(x, y, z))
-            a, b, c = new_vectors
-            a.u, a.v = texture[0] or (0, 0)
-            b.u, b.v = texture[1] or (0, 0)
-            c.u, c.v = texture[2] or (0, 0)
-            light = []
-            for normal in normals:
-                x, y, z = normal
-                light.append(int((x * light_vector[0] + y * light_vector[1] + z * light_vector[2]) * 256))
-            a.light, b.light, c.light = light
-            self.triangle(a, b, c)
+        rotated = []
+        xx, yy, zz = [], [], []
+        for polygon in self.polygons:
+            new_polygon = []
+            for v in polygon:
+                x, y, z = v['xyz']
+                x = float(x * cos(rotate) - z * sin(rotate))
+                z = float(x * sin(rotate) + z * cos(rotate))
+                y = y
+                new_polygon.append({
+                    'xyz': [x, y, z],
+                    'texture': v['texture'],
+                    'normals': v['normals'],
+                })
+                xx.append(x)
+                yy.append(y)
+                zz.append(z)
+            rotated.append(new_polygon)
+
+        min_x = min(xx)
+        min_y = min(yy)
+        min_z = min(zz)
+        scale_y = scale_x = int((scr_x - 1) / (max(xx) - min_x))
+        scr_y = int((max(yy) - min_y) * scale_y) + 1
+        scale_z = int(scr_z / (max(zz) - min_z))
+
+        Canvas(scr_x, scr_y, scr_z)
+
+        for polygon in rotated:
+            vectors3 = []
+            for v in polygon:
+                x, y, z = v['xyz']
+                vector = Vector(int((x - min_x) * scale_x), int((y - min_y) * scale_y), (z - min_z) * scale_z)
+                vector.u, vector.v = v['texture'] or (0, 0)
+                x, y, z = v['normals']
+                vector.light = (int((x * light_vector[0] + y * light_vector[1] + z * light_vector[2]) * 256))
+                vectors3.append(vector)
+            self.triangle(*vectors3)
         Canvas.show()
 dt = datetime.datetime.now()
-face = Face(texture_file='african_head_diffuse.tga', normals_file='african_head_nm.png')
-face.show(light_vector=(1, 1, 1), eye_vector=(0, 0, 1), rotate=0*3.14/4)
+face = Face(
+    obj_file='face.obj',
+    texture_file='african_head_diffuse.tga',
+    normals_file='african_head_nm.png'
+)
+# face = Face(
+#    obj_file='Porsche_911_GT2.obj',
+#    texture_file='0000.BMP',
+#    normals_file='african_head_nm.png'
+# )
+face.show(
+    light_vector=(1, 1, 1),
+    eye_vector=(0, 0, 1),
+    rotate=1*3.14/8
+)
 print datetime.datetime.now() - dt
 

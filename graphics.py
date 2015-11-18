@@ -33,7 +33,7 @@ class Canvas(object):
         try:
             cls.pixels[x, cls.scr_y - y] = color
         except:
-            #print x, y
+            # print x, y
             pass
 
     @classmethod
