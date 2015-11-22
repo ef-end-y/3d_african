@@ -37,7 +37,26 @@ class Canvas(object):
             pass
 
     @classmethod
-    def show(cls):
+    def show(cls, pixels, multisampling=False):
+        canvas_pixels = cls.pixels
+        k = 2 if multisampling else 1
+        for y in range(cls.scr_y):
+            step = True
+            x0 = 0
+            for x in range(cls.scr_x * k):
+                step = not step
+                if multisampling and step:
+                    continue
+                color = pixels[y][x]
+                if multisampling:
+                    color2 = pixels[y][x+1]
+                    color = (
+                        int((color[0] + color2[0])/2),
+                        int((color[1] + color2[1])/2),
+                        int((color[2] + color2[2])/2),
+                    )
+                canvas_pixels[x0, y] = color
+                x0 += 1
         cls.img.show()
 
 
@@ -49,8 +68,8 @@ class Vector(object):
     v = 0
     light = None
 
-    def __init__(self, x, y, z):
-        self.x, self.y, self.z = x, y, z
+    def __init__(self, x, y, z, light=None):
+        self.x, self.y, self.z, self.light = x, y, z, light
 
     def draw(self, color):
         Canvas.pixel(self.x, self.y, self.z, color)
