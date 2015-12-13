@@ -18,17 +18,19 @@ Scr_z = 10000
  6: текстура, яркость по рассеянному и отраженному свету
 """
 Mode = 6
-MSAA = True  # multisampling
+Multisampling = True
 
 
 class Render(object):
     light_vector = None
     eye_vector = None
     pixels = None
-    z_buffer = None
     scr_x = 0
     scr_y = 0
     scr_z = 0
+    current_scr_x = 0
+    tr_num = 0
+    layer2 = None
     u_max = None
     v_max = None
 
@@ -48,6 +50,7 @@ class Render(object):
 
         u_max = self.texture_img.width
         v_max = self.texture_img.height
+        limit = 10000
         for s in src.split('\n'):
             try:
                 data = re.split('\s+', re.sub('(\s|\r)*$', '', s))
@@ -68,60 +71,87 @@ class Render(object):
                             'normals': normals[i[2]],
                         })
                     polygons.append(tuple(polygon))
+                    limit -= 1
+                    if not limit:
+                        break
             except (ValueError, IndexError):
                 print s
                 continue
-
-    def set_pixel(self, x, y, z, u, v, light, pixel_line, multi):
-        xx = int(round(x))
-        zz = round(z)
-        index = int(y * self.scr_x + xx)
-        if self.z_buffer[index] >= zz:
-            return
-        self.z_buffer[index] = zz
         if Mode == 0:
-            color = (int(z * 200 / Scr_z + 50),) * 3
+            self.set_pixel_now = self.set_pixel0
         elif Mode == 1:
-            color = (int(light),) * 3
-        else:
-            uu = max(0, min(int(u), self.u_max))
-            vv = max(0, min(int(self.v_max - v), self.v_max))
-            color = list(self.texture_pixels[uu, vv])
-            if Mode == 2:
-                pass
-            elif Mode == 3:
-                color = [int(i * light / 256) for i in color]
-            else:
-                normals = self.normals_map[uu][vv]
-                n_light = sum([normals[i] * self.light_vector[i] for i in(0, 1, 2)])
-                mirror = [self.light_vector[i] - 2 * normals[i] * n_light for i in(0, 1, 2)]
-                specular = sum([-mirror[i] * self.eye_vector[i] for i in(0, 1, 2)])
-                specular = copysign(pow(specular, 10), specular)
-                if Mode == 4:
-                    n_light = int(n_light*256)
-                    color = (n_light,) * 3
-                elif Mode == 5:
-                    intensity = int(256*specular)
-                    if intensity < 0:
-                        intensity = 0
-                    color = (intensity,) * 3
-                else:
-                    intensity = float(n_light*0.7 + specular*0.005 + 0.2)
-                    if intensity < 0:
-                        intensity = 0
-                    color = [int(i * intensity) for i in color]
-                color = tuple(color)
-        pixel_line[xx] = color
-        if multi:
-            if self.z_buffer[index+1] >= zz:
-                return
-            self.z_buffer[index+1] = zz
-            pixel_line[xx+1] = color
+            self.set_pixel_now = self.set_pixel1
+        elif Mode == 2:
+            self.set_pixel_now = self.set_pixel2
+        elif Mode == 3:
+            self.set_pixel_now = self.set_pixel3
+        elif Mode == 4:
+            self.set_pixel_now = self.set_pixel4
+        elif Mode == 5:
+            self.set_pixel_now = self.set_pixel5
+        elif Mode == 6:
+            self.set_pixel_now = self.set_pixel6
 
-    def triangle(self, a, b, c):
+    def set_pixel0(self, x, z, u, v, light, pixel):
+        pixel.extend([int(z * 200 / Scr_z + 50)] * 3)
+
+    def set_pixel1(self, x, z, u, v, light, pixel):
+        pixel.extend([int(light)] * 3)
+
+    def set_pixel2(self, x, z, u, v, light, pixel):
+        pixel.extend(self.texture_pixels[u, v])
+
+    def set_pixel3(self, x, z, u, v, light, pixel):
+        color = list(self.texture_pixels[u, v])
+        pixel.extend([int(i * light / 128) for i in color])
+
+    def set_pixel4(self, x, z, u, v, light, pixel):
+        normals = self.normals_map[u][v]
+        n_light = sum([normals[i] * self.light_vector[i] for i in(0, 1, 2)])
+        n_light = int(n_light*256)
+        pixel.extend([n_light] * 3)
+
+    def set_pixel5(self, x, z, u, v, light, pixel):
+        normals = self.normals_map[u][v]
+        n_light = sum([normals[i] * self.light_vector[i] for i in(0, 1, 2)])
+        mirror = [self.light_vector[i] - 2 * normals[i] * n_light for i in(0, 1, 2)]
+        specular = sum([-mirror[i] * self.eye_vector[i] for i in(0, 1, 2)])
+        specular = copysign(pow(specular, 10), specular)
+        intensity = int(256*specular)
+        if intensity < 0:
+            intensity = 0
+        pixel.extend([intensity] * 3)
+
+    def set_pixel6(self, x, z, u, v, light, pixel):
+        color = list(self.texture_pixels[u, v])
+        normals = self.normals_map[u][v]
+        n_light = sum([normals[i] * self.light_vector[i] for i in(0, 1, 2)])
+        mirror = [self.light_vector[i] - 2 * normals[i] * n_light for i in(0, 1, 2)]
+        specular = sum([-mirror[i] * self.eye_vector[i] for i in(0, 1, 2)])
+        specular = copysign(pow(specular, 10), specular)
+        intensity = float(n_light*0.7 + specular*0.005 + 0.2)
+        if intensity < 0:
+            intensity = 0
+        color = [int(i * intensity) for i in color]
+        pixel.extend(color)
+
+    def set_pixel(self, xx, z, u, v, light, pixel_line, multisampling=False):
+        zz = round(z)
+        index = pixel_line + xx
+        if self.pixels[index][0] > zz:
+            return
+        pixel = self.pixels[index] = [zz, self.tr_num]
+        # if multisampling:
+        #    pixel.extend([255, 0, 0])
+        #    return
+        uu = max(0, min(int(u), self.u_max))
+        vv = max(0, min(int(self.v_max - v), self.v_max))
+        self.set_pixel_now(xx, zz, uu, vv, light, pixel)
+
+    def triangle(self, tr_num, a, b, c, multisampling=False):
+        self.tr_num = tr_num
         self.u_max = self.texture_img.width - 1
         self.v_max = self.texture_img.height - 1
-        pixels = self.pixels
         a, b, c = sorted((a, b, c), key=lambda vector: vector.y)
         y, x1, x2, z1, z2 = int(a.y), a.x, a.x, a.z, a.z
         u1, u2, v1, v2 = a.u, a.u, a.v, a.v
@@ -163,33 +193,44 @@ class Render(object):
                 v2 += delta_v2
                 light1 += delta_b_light
                 light2 += delta_c_light
-
+            pixel_line = y * self.current_scr_x
             while y <= point.y:
                 if x1 > x2:
                     x, z, u, v, light, x_right = x2, z2, u2, v2, light2, x1
-                    last_point = (x1, y, z1, u1, v1, light1)
+                    last_point = (int(round(x1)), z1, u1, v1, light1)
                 else:
                     x, z, u, v, light, x_right = x1, z1, u1, v1, light1, x2
-                    last_point = (x2, y, z2, u2, v2, light2)
-                pixel_line = pixels[self.scr_y - y]
-                line = []
-                while x <= x_right:
-                    line.append((x, y, z, u, v, light))
-                    x += 1
-                    z += dz
-                    u += du
-                    v += dv
-                    light += dl
-                line.append(last_point)
-                n = len(line)
-                k = True
-                for i, param in enumerate(line):
-                    if not MSAA or i in (0, 1, n-2, n-1):
-                        self.set_pixel(*param, pixel_line=pixel_line, multi=False)
-                    else:
-                        if k:
-                            self.set_pixel(*param, pixel_line=pixel_line, multi=True)
-                        k = not k
+                    last_point = (int(round(x2)), z2, u2, v2, light2)
+                xx = int(round(x))
+                if multisampling:
+                    force_calc = True
+                    while x <= x_right:
+                        if force_calc:
+                            self.set_pixel(xx, z, u, v, light, pixel_line)
+                            force_calc = False
+                        else:
+                            index = pixel_line + xx
+                            p = self.layer2[index]
+                            if len(p) == 5 and p[1] == tr_num:
+                                self.pixels[index] = p
+                            else:
+                                self.set_pixel(xx, z, u, v, light, pixel_line)
+                        xx += 1
+                        x += 1
+                        z += dz
+                        u += du
+                        v += dv
+                        light += dl
+                else:
+                    while x <= x_right:
+                        self.set_pixel(xx, z, u, v, light, pixel_line)
+                        xx += 1
+                        x += 1
+                        z += dz
+                        u += du
+                        v += dv
+                        light += dl
+                self.set_pixel(*last_point, pixel_line=pixel_line)
                 y += 1
                 x1 += delta_bx
                 x2 += delta_cx
@@ -201,6 +242,7 @@ class Render(object):
                 v2 += delta_v2
                 light1 += delta_b_light
                 light2 += delta_c_light
+                pixel_line += self.current_scr_x
 
     def show(self, light_vector, eye_vector, rotate):
         self.light_vector = light_vector
@@ -233,20 +275,17 @@ class Render(object):
         min_x = min(xx)
         min_y = min(yy)
         min_z = min(zz)
-        scr_x = Scr_x * 2 if MSAA else Scr_x
-        scale_x = int((scr_x - 1) / (max(xx) - min_x))
-        scale_y = int((Scr_x - 1) / (max(xx) - min_x))
+        self.current_scr_x = scr_x = Scr_x
+        scale_y = scale_x = (scr_x - 1) // (max(xx) - min_x)
         scr_y = int((max(yy) - min_y) * scale_y) + 1
-        scale_z = int(Scr_z / (max(zz) - min_z))
+        scale_z = Scr_z // (max(zz) - min_z)
 
         Canvas(Scr_x, scr_y, Scr_z)
-        (self.scr_x, self.scr_y, self.scr_z) = (scr_x-1, scr_y-1, Scr_z)
+        (self.scr_x, self.scr_y, self.scr_z) = (scr_x, scr_y, Scr_z)
 
-        self.pixels = pixels = []
-        for j in range(scr_y):
-            pixels.append([(0, 0, 0) for i in range(scr_x)])
-        self.z_buffer = [0] * scr_x * scr_y
-
+        self.pixels = pixels = [[0]] * scr_x * scr_y
+        triangles = []
+        tr_num = 0
         for polygon in rotated:
             vectors3 = []
             for v in polygon:
@@ -260,8 +299,33 @@ class Render(object):
                 x, y, z = v['normals']
                 vector.light = int((x * light_vector[0] + y * light_vector[1] + z * light_vector[2]) * 128)
                 vectors3.append(vector)
-            self.triangle(*vectors3)
-        Canvas.show(self.pixels, multisampling=MSAA)
+            self.triangle(tr_num, *vectors3)
+            for vector in vectors3:
+                vector.x *= 2
+                vector.y *= 2
+            triangles.append(vectors3)
+            tr_num += 1
+
+        if Multisampling:
+            visible_triangles = {}
+            self.layer2 = layer2 = []
+            for y in range(0, self.scr_y * self.scr_x, self.scr_x):
+                new_line = []
+                for x in range(self.scr_x):
+                    p = pixels[y + x]
+                    if len(p) > 1 and p[1] not in visible_triangles:
+                        visible_triangles[p[1]] = True
+                    new_line.append(p)
+                    new_line.append(p)
+                layer2.extend(new_line)
+                layer2.extend(new_line)
+            self.pixels = [[0]] * scr_x * scr_y * 4
+            self.current_scr_x *= 2
+            for tr_num, vectors3 in enumerate(triangles):
+                if tr_num in visible_triangles:
+                    self.triangle(tr_num, *vectors3, multisampling=True)
+
+        Canvas.show(self.pixels, multisampling=Multisampling)
 
 dt = datetime.datetime.now()
 face = Render(
@@ -269,11 +333,11 @@ face = Render(
     texture_file='african_head_diffuse.tga',
     normals_file='african_head_nm.png'
 )
-#face = Render(
+# face = Render(
 #    obj_file='Porsche_911_GT2.obj',
 #    texture_file='0000.BMP',
 #    normals_file='0000-a.BMP'
-#)
+# )
 face.show(
     light_vector=(1, 1, 1),
     eye_vector=(0, 0, 1),

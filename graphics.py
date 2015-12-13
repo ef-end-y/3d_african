@@ -16,9 +16,9 @@ class Canvas(object):
         Canvas.img = Image.new('RGB', (scr_x, scr_y), 'black')
         Canvas.pixels = self.img.load()
         Canvas.z_buffer = {}
-        Canvas.scr_x = scr_x - 1
-        Canvas.scr_y = scr_y - 1
-        Canvas.scr_z = scr_z - 1
+        Canvas.scr_x = scr_x
+        Canvas.scr_y = scr_y
+        Canvas.scr_z = scr_z
         Canvas.center_x = int(scr_x/2)
         Canvas.center_y = int(scr_y/2)
         Canvas.canvas = self
@@ -40,23 +40,31 @@ class Canvas(object):
     def show(cls, pixels, multisampling=False):
         canvas_pixels = cls.pixels
         k = 2 if multisampling else 1
+        source_x = cls.scr_x * k
+        source_y = cls.scr_y * k
+        y1 = source_x * (source_y - k)
+        delta_y = source_x * k
         for y in range(cls.scr_y):
-            step = True
-            x0 = 0
-            for x in range(cls.scr_x * k):
-                step = not step
-                if multisampling and step:
-                    continue
-                color = pixels[y][x]
+            x1 = y1
+            for x in range(cls.scr_x):
                 if multisampling:
-                    color2 = pixels[y][x+1]
                     color = (
-                        int((color[0] + color2[0])/2),
-                        int((color[1] + color2[1])/2),
-                        int((color[2] + color2[2])/2),
+                        pixels[x1],
+                        pixels[x1 + 1],
+                        pixels[x1 + source_x],
+                        pixels[x1 + source_x + 1],
                     )
-                canvas_pixels[x0, y] = color
-                x0 += 1
+                    color = (
+                        int(sum(0 if len(i) != 5 else i[2] for i in color)/4),
+                        int(sum(0 if len(i) != 5 else i[3] for i in color)/4),
+                        int(sum(0 if len(i) != 5 else i[4] for i in color)/4),
+                    )
+                else:
+                    color = pixels[x1]
+                    color = (0, 0, 0) if len(color) != 5 else tuple(color[2:5])
+                canvas_pixels[x, y] = color
+                x1 += k
+            y1 -= delta_y
         cls.img.show()
 
 
