@@ -3,7 +3,7 @@ import re
 import datetime
 from math import sin, cos, copysign
 from PIL import Image
-from graphics import Vector, Canvas
+from graphics import Vector, Canvas, Matrix
 
 Scr_x = 600
 Scr_z = 10000
@@ -18,7 +18,7 @@ Scr_z = 10000
  6: текстура, яркость по рассеянному и отраженному свету
 """
 Mode = 6
-Multisampling = True
+Multisampling = False
 
 
 class Render(object):
@@ -50,7 +50,7 @@ class Render(object):
 
         u_max = self.texture_img.width
         v_max = self.texture_img.height
-        limit = 10000
+        limit = 100000
         for s in src.split('\n'):
             try:
                 data = re.split('\s+', re.sub('(\s|\r)*$', '', s))
@@ -92,16 +92,16 @@ class Render(object):
         elif Mode == 6:
             self.set_pixel_now = self.set_pixel6
 
-    def set_pixel0(self, x, z, u, v, light, pixel):
+    def set_pixel0(self, z, u, v, light, pixel):
         pixel.extend([int(z * 200 / Scr_z + 50)] * 3)
 
-    def set_pixel1(self, x, z, u, v, light, pixel):
+    def set_pixel1(self, z, u, v, light, pixel):
         pixel.extend([int(light)] * 3)
 
-    def set_pixel2(self, x, z, u, v, light, pixel):
+    def set_pixel2(self, z, u, v, light, pixel):
         pixel.extend(self.texture_pixels[u, v])
 
-    def set_pixel3(self, x, z, u, v, light, pixel):
+    def set_pixel3(self, z, u, v, light, pixel):
         color = list(self.texture_pixels[u, v])
         pixel.extend([int(i * light / 128) for i in color])
 
@@ -111,25 +111,25 @@ class Render(object):
         n_light = int(n_light*256)
         pixel.extend([n_light] * 3)
 
-    def set_pixel5(self, x, z, u, v, light, pixel):
+    def set_pixel5(self, z, u, v, light, pixel):
         normals = self.normals_map[u][v]
         n_light = sum([normals[i] * self.light_vector[i] for i in(0, 1, 2)])
         mirror = [self.light_vector[i] - 2 * normals[i] * n_light for i in(0, 1, 2)]
         specular = sum([-mirror[i] * self.eye_vector[i] for i in(0, 1, 2)])
         specular = copysign(pow(specular, 10), specular)
-        intensity = int(256*specular)
+        intensity = int(512*specular)
         if intensity < 0:
             intensity = 0
         pixel.extend([intensity] * 3)
 
-    def set_pixel6(self, x, z, u, v, light, pixel):
+    def set_pixel6(self, z, u, v, light, pixel):
         color = list(self.texture_pixels[u, v])
         normals = self.normals_map[u][v]
         n_light = sum([normals[i] * self.light_vector[i] for i in(0, 1, 2)])
         mirror = [self.light_vector[i] - 2 * normals[i] * n_light for i in(0, 1, 2)]
         specular = sum([-mirror[i] * self.eye_vector[i] for i in(0, 1, 2)])
         specular = copysign(pow(specular, 10), specular)
-        intensity = float(n_light*0.7 + specular*0.005 + 0.2)
+        intensity = float(n_light*0.7 + specular*2 + 0.2)
         if intensity < 0:
             intensity = 0
         color = [int(i * intensity) for i in color]
@@ -146,7 +146,7 @@ class Render(object):
         #    return
         uu = max(0, min(int(u), self.u_max))
         vv = max(0, min(int(self.v_max - v), self.v_max))
-        self.set_pixel_now(xx, zz, uu, vv, light, pixel)
+        self.set_pixel_now(zz, uu, vv, light, pixel)
 
     def triangle(self, tr_num, a, b, c, multisampling=False):
         self.tr_num = tr_num
@@ -165,12 +165,14 @@ class Render(object):
         delta_c_light = float(c.light - light1) / height if height else 0
         for step in (False, True):
             if step:
-                x2 -= delta_cx
-                z2 -= delta_cz
-                light2 -= delta_c_light
                 y, x1, z1, u1, v1, light1 = int(b.y), b.x, b.z, b.u, b.v, b.light
                 point = c
-            height = float(point.y - y) or 1.0
+                height = float(point.y - y)
+                if not height:
+                    break
+                y += 1
+            else:
+                height = float(point.y - y) or 1.0
             delta_bx = float(point.x - x1) / height
             delta_bz = float(point.z - z1) / height
             delta_v1 = float(point.v - v1) / height
@@ -181,20 +183,19 @@ class Render(object):
             du = float(u2 + delta_u2 - u1 - delta_u1) / dx
             dv = float(v2 + delta_v2 - v1 - delta_v1) / dx
             dl = float(light2 + delta_c_light - light1 - delta_b_light) / dx
-            if step:
-                y += 1
-                x1 += delta_bx
-                x2 += delta_cx
-                z1 += delta_bz
-                z2 += delta_cz
-                u1 += delta_u1
-                u2 += delta_u2
-                v1 += delta_v1
-                v2 += delta_v2
-                light1 += delta_b_light
-                light2 += delta_c_light
             pixel_line = y * self.current_scr_x
-            while y <= point.y:
+            while True:
+                if step:
+                    x1 += delta_bx
+                    x2 += delta_cx
+                    z1 += delta_bz
+                    z2 += delta_cz
+                    u1 += delta_u1
+                    u2 += delta_u2
+                    v1 += delta_v1
+                    v2 += delta_v2
+                    light1 += delta_b_light
+                    light2 += delta_c_light
                 if x1 > x2:
                     x, z, u, v, light, x_right = x2, z2, u2, v2, light2, x1
                     last_point = (int(round(x1)), z1, u1, v1, light1)
@@ -232,19 +233,12 @@ class Render(object):
                         light += dl
                 self.set_pixel(*last_point, pixel_line=pixel_line)
                 y += 1
-                x1 += delta_bx
-                x2 += delta_cx
-                z1 += delta_bz
-                z2 += delta_cz
-                u1 += delta_u1
-                u2 += delta_u2
-                v1 += delta_v1
-                v2 += delta_v2
-                light1 += delta_b_light
-                light2 += delta_c_light
+                if y > point.y:
+                    break
+                step = True
                 pixel_line += self.current_scr_x
 
-    def show(self, light_vector, eye_vector, rotate):
+    def show(self, light_vector, eye_vector, x_rotate=0.0, y_rotate=0.0, z_rotate=0.0):
         self.light_vector = light_vector
         self.eye_vector = eye_vector
         self.normals_map = normals_map = []
@@ -260,9 +254,19 @@ class Render(object):
             new_polygon = []
             for v in polygon:
                 x, y, z = v['xyz']
-                x = float(x * cos(rotate) - z * sin(rotate))
-                z = float(x * sin(rotate) + z * cos(rotate))
-                y = y
+                x, y, z = (Matrix([[x, y, z]]) * Matrix([
+                    [1, 0, 0],
+                    [0, cos(x_rotate), -sin(x_rotate)],
+                    [0, sin(x_rotate), cos(x_rotate)]
+                ]) * Matrix([
+                    [cos(y_rotate), 0, sin(y_rotate)],
+                    [0, 1, 0],
+                    [-sin(y_rotate), 0, cos(y_rotate)]
+                ]) * Matrix([
+                    [cos(z_rotate), -sin(z_rotate), 0],
+                    [sin(z_rotate), cos(z_rotate), 0],
+                    [0, 0, 1]
+                ])).data[0]
                 new_polygon.append({
                     'xyz': (x, y, z),
                     'texture': v['texture'],
@@ -283,7 +287,7 @@ class Render(object):
         Canvas(Scr_x, scr_y, Scr_z)
         (self.scr_x, self.scr_y, self.scr_z) = (scr_x, scr_y, Scr_z)
 
-        self.pixels = pixels = [[0]] * scr_x * scr_y
+        self.pixels = pixels = [[0]] * scr_x * (scr_y + 1)
         triangles = []
         tr_num = 0
         for polygon in rotated:
@@ -297,7 +301,7 @@ class Render(object):
                 )
                 vector.u, vector.v = v['texture'] or (0, 0)
                 x, y, z = v['normals']
-                vector.light = int((x * light_vector[0] + y * light_vector[1] + z * light_vector[2]) * 128)
+                vector.light = int((x * light_vector.x + y * light_vector.y + z * light_vector.z) * 256)
                 vectors3.append(vector)
             self.triangle(tr_num, *vectors3)
             for vector in vectors3:
@@ -319,7 +323,7 @@ class Render(object):
                     new_line.append(p)
                 layer2.extend(new_line)
                 layer2.extend(new_line)
-            self.pixels = [[0]] * scr_x * scr_y * 4
+            self.pixels = [[0]] * scr_x * (scr_y + 1) * 4
             self.current_scr_x *= 2
             for tr_num, vectors3 in enumerate(triangles):
                 if tr_num in visible_triangles:
@@ -333,15 +337,12 @@ face = Render(
     texture_file='african_head_diffuse.tga',
     normals_file='african_head_nm.png'
 )
-# face = Render(
-#    obj_file='Porsche_911_GT2.obj',
-#    texture_file='0000.BMP',
-#    normals_file='0000-a.BMP'
-# )
 face.show(
-    light_vector=(1, 1, 1),
-    eye_vector=(0, 0, 1),
-    rotate=1*3.14/4
+    light_vector=Vector(1, 1, 1).normalize(),
+    eye_vector=Vector(0, 0, 1).normalize(),
+    x_rotate=-0.4*0,
+    y_rotate=0.2*0,
+    z_rotate=-0.5*0,
 )
 print datetime.datetime.now() - dt
 

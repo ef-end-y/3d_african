@@ -69,20 +69,24 @@ class Canvas(object):
 
 
 class Vector(object):
-    x = 0
-    y = 0
-    z = 0
-    u = 0
-    v = 0
-    light = None
-
     def __init__(self, x, y, z, light=None):
         self.x, self.y, self.z, self.light = x, y, z, light
+        self.u = 0
+        self.v = 0
 
     def draw(self, color):
         Canvas.pixel(self.x, self.y, self.z, color)
 
-    def multiply(self, vec):
+    def __getitem__(self, index):
+        if index == 0:
+            return self.x
+        if index == 1:
+            return self.y
+        if index == 2:
+            return self.z
+        return None
+
+    def __mul__(self, vec):
         return Vector(
             self.y * vec.z - self.z * vec.y,
             self.x * vec.z - self.z * vec.x,
@@ -96,41 +100,23 @@ class Vector(object):
         self.x /= length
         self.y /= length
         self.z /= length
+        return self
 
     @staticmethod
     def plane_normal(a, b, c):
         ab = Vector(b.x - a.x, b.y - a.y, b.z - a.z)
         ac = Vector(c.x - a.x, c.y - a.y, c.z - a.z)
-        return ab.multiply(ac)
+        return ab * ac
 
     def __repr__(self):
         return '%s:%s:%s' % (self.x, self.y, self.z)
 
 
-def _swap_if(condition, a, b):
-    return (b, a) if condition else (a, b)
+class Matrix(object):
+    def __init__(self, data):
+        self.data = data
 
-
-def line(a, b):
-    if a.x == b.x and a.y == b.y:
-        return [a]
-    if abs(b.y - a.y) > abs(b.x - a.x):
-        a, b = _swap_if(a.y > b.y, a, b)
-        delta = float(b.x - a.x) / float(b.y - a.y)
-        delta_z = float(b.z - a.z) / float(b.y - a.y)
-        x, y, z = a.x, a.y, a.z
-        while y <= b.y:
-            Vector(x, y, z+2).draw((int((z-70)*1.6), 0, 0))
-            x += delta
-            y += 1
-            z += delta_z
-    else:
-        a, b = _swap_if(a.x > b.x, a, b)
-        delta = float(b.y - a.y) / float(b.x - a.x)
-        delta_z = float(b.z - a.z) / float(b.x - a.x)
-        x, y, z = a.x, a.y, a.z
-        while x <= b.x:
-            Vector(x, y, z+2).draw((int((z-70)*1.6), 0, 0))
-            y += delta
-            x += 1
-            z += delta_z
+    def __mul__(self, matrix):
+        x = self.data
+        y = matrix.data
+        return Matrix([[sum(a*b for a, b in zip(x_row, y_col)) for y_col in zip(*y)] for x_row in x])
