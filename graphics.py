@@ -3,50 +3,19 @@ from PIL import Image
 
 
 class Canvas(object):
-    pixels = None
-    z_buffer = None
     img = None
-    scr_x = None
-    scr_y = None
-    scr_z = None
-    center_x = None
-    center_y = None
 
-    def __init__(self, scr_x, scr_y, scr_z):
-        Canvas.img = Image.new('RGB', (scr_x, scr_y), 'black')
-        Canvas.pixels = self.img.load()
-        Canvas.z_buffer = {}
-        Canvas.scr_x = scr_x
-        Canvas.scr_y = scr_y
-        Canvas.scr_z = scr_z
-        Canvas.center_x = int(scr_x/2)
-        Canvas.center_y = int(scr_y/2)
-        Canvas.canvas = self
-
-    @classmethod
-    def pixel(cls, x, y, z, color):
-        x, y, z = int(round(x)), int(round(y)), round(z)
-        index = '%s:%s' % (x, y)
-        if cls.z_buffer.get(index, -99999) >= z:
-            return
-        cls.z_buffer[index] = z
-        try:
-            cls.pixels[x, cls.scr_y - y] = color
-        except:
-            # print x, y
-            pass
-
-    @classmethod
-    def show(cls, pixels, multisampling=False):
-        canvas_pixels = cls.pixels
+    def __init__(self, width, height, pixels, multisampling=False):
+        self.img = Image.new('RGB', (width, height), 'black')
+        canvas_pixels = self.img.load()
         k = 2 if multisampling else 1
-        source_x = cls.scr_x * k
-        source_y = cls.scr_y * k
+        source_x = width * k
+        source_y = height * k
         y1 = source_x * (source_y - k)
         delta_y = source_x * k
-        for y in range(cls.scr_y):
+        for y in range(height):
             x1 = y1
-            for x in range(cls.scr_x):
+            for x in range(width):
                 if multisampling:
                     color = (
                         pixels[x1],
@@ -65,7 +34,6 @@ class Canvas(object):
                 canvas_pixels[x, y] = color
                 x1 += k
             y1 -= delta_y
-        cls.img.show()
 
 
 class Vector(object):
@@ -73,9 +41,6 @@ class Vector(object):
         self.x, self.y, self.z, self.light = x, y, z, light
         self.u = 0
         self.v = 0
-
-    def draw(self, color):
-        Canvas.pixel(self.x, self.y, self.z, color)
 
     def __getitem__(self, index):
         if index == 0:
@@ -86,17 +51,38 @@ class Vector(object):
             return self.z
         return None
 
+    def __add__(self, vec):
+        return Vector(
+            self.x + vec.x,
+            self.y + vec.y,
+            self.z + vec.z,
+        )
+
+    def __sub__(self, vec):
+        return Vector(
+            self.x - vec.x,
+            self.y - vec.y,
+            self.z - vec.z,
+        )
+
     def __mul__(self, vec):
         return Vector(
+            self.x * vec.x,
+            self.y * vec.y,
+            self.z * vec.z,
+        )
+
+    def cross(self, vec):
+        return Vector(
             self.y * vec.z - self.z * vec.y,
-            self.x * vec.z - self.z * vec.x,
+            self.z * vec.x - self.x * vec.z,
             self.x * vec.y - self.y * vec.x,
         )
 
     def normalize(self):
         length = math.sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
         if not length:
-            return
+            return self
         self.x /= length
         self.y /= length
         self.z /= length
