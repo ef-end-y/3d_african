@@ -195,6 +195,12 @@ class View(object):
 
     def triangle(self, tr_num, a, b, c, multisampling=False):
         self.tr_num = tr_num
+        if a.light < 0:
+            a.light = 0
+        if b.light < 0:
+            b.light = 0
+        if c.light < 0:
+            c.light = 0
         a, b, c = sorted((a, b, c), key=lambda vector: vector.y)
         y, x1, x2, z1, z2 = int(a.y), a.x, a.x, a.z, a.z
         u1, u2, v1, v2 = a.u, a.u, a.v, a.v
